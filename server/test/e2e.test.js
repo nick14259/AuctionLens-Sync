@@ -79,7 +79,11 @@ test("two members' scans come back merged in the guild data addon", async () => 
 
     assert.equal(await upload(cfgA, {}, quiet), 1);
     assert.equal(await upload(cfgB, {}, quiet), 2);
-    assert.equal(await upload(cfgA, {}, quiet), 1, "the next upload sends only from yesterday on");
+    assert.equal(await upload(cfgA, {}, quiet), 0, "no scan since the last upload: nothing sent");
+    // A new scan in the game: sent again, from yesterday on.
+    const svA = join(wowA, "WTF", "Account", "ACCT", "SavedVariables", "AuctionLens.lua");
+    writeFileSync(svA, readFileSync(svA, "utf8").replace(`["lastScan"] = ${NOW - 60}`, `["lastScan"] = ${NOW - 5}`));
+    assert.equal(await upload(cfgA, {}, quiet), 1, "after a new scan it sends again");
 
     const data = await download(cfgA, {}, quiet);
     assert.equal(data.group, "E2E");

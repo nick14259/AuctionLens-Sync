@@ -136,11 +136,14 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
         if (!ready()) return Promise.resolve(null);
         cancelScheduled();
         return run("sync", async () => {
-            const r = await client.sync(env, cfg, {}, log);
+            const r = await client.sync(env, cfg, { seen }, log);
             remember(r.seen);
-            log(`synced: sent ${r.uploaded} items, received ${r.downloaded} - /reload in game to see them`);
+            log(r.skipped ? "synced: nothing new to send or fetch"
+                : `synced: sent ${r.uploaded} items, received ${r.downloaded} - /reload in game to see them`);
             await refreshWatches();
-            return { uploaded: r.uploaded, downloaded: r.downloaded, group: r.group };
+            // "received 0" would read as the guild having nothing: say it was not needed.
+            return r.skipped ? { uploaded: 0, upToDate: true, group: r.group }
+                : { uploaded: r.uploaded, downloaded: r.downloaded, group: r.group };
         });
     }
 

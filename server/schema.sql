@@ -45,6 +45,7 @@ create table if not exists upload_log (
     created_at  timestamptz not null default now()
 );
 create index if not exists upload_log_recent on upload_log (group_id, created_at desc);
+create index if not exists upload_log_member on upload_log (member_id, market, created_at desc);
 
 -- How far each member's uploads for a market reach: the next upload sends only newer days.
 create table if not exists uploads (

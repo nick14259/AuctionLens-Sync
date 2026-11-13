@@ -124,17 +124,28 @@ function newestDay(entry, schema) {
 
 /**
  * Sends what is new since this member's last complete upload, per market.
- * Returns { items, markets: [{ market, items, batches, full }] }.
+ * Returns { items, markets: [{ market, items, batches, full }], status } - status is the
+ * server's answer from before the upload, which sync() reuses.
+ *
+ * A market whose newest scan (meta.lastScan, stamped by the addon when it stores a scan)
+ * is no newer than the one in our last upload is skipped outright: the addon's history
+ * only changes when it stores a scan, so there is nothing to send. Costs nothing - no
+ * data is read or compared. `opt.force` sends anyway.
  */
 export async function upload(env, cfg, opt = {}, log = () => {}) {
     const st = await status(env, cfg);
     const through = new Map(st.uploads.map((u) => [u.market, u.throughDay]));
-    const summary = { items: 0, markets: [] };
+    const sentScan = new Map(st.uploads.map((u) => [u.market, Number(u.lastScan) || 0]));
+    const summary = { items: 0, markets: [], status: st };
     for (const file of await svFiles(env, cfg, opt)) {
         const db = await readDb(env, file);
         const schema = Number(db.schema);
         try { layout(schema); } catch (e) { throw new SyncError(`${e.message} - update the companion`); }
         for (const entry of marketsIn(db)) {
+            if (!opt.force && entry.lastScan && entry.lastScan <= (sentScan.get(entry.market) || 0)) {
+                log(`${entry.market}: no new scan since your last upload - nothing to send`);
+                continue;
+            }
             // Yesterday again: a day still running at the last upload was not finished.
             const prev = through.get(entry.market);
             const since = prev === undefined ? undefined : prev - 1;
@@ -161,6 +172,7 @@ export async function upload(env, cfg, opt = {}, log = () => {}) {
             summary.markets.push({ market: entry.market, items: sent, batches: batches.length, full: since === undefined });
             // A second account on the same market sends from the same mark.
             through.set(entry.market, throughDay);
+            sentScan.set(entry.market, Math.max(sentScan.get(entry.market) || 0, entry.lastScan || 0));
         }
     }
     return summary;
@@ -234,9 +246,24 @@ function changedMs(m) {
     return Number(m.changed) || (Number(m.updated) || 0) * 1000;
 }
 
-/** Upload, then download: one complete sync. */
+/**
+ * Upload, then download: one complete sync.
+ *
+ * With `opt.seen` (what the last download saw, from download().seen), the download is
+ * skipped when this sync sent nothing and nobody else uploaded since: the guild data on
+ * disk is already current. The status answer the upload fetched first is reused for
+ * that, so a sync with nothing to do is one small request. Without `opt.seen` (the CLI),
+ * it always downloads.
+ */
 export async function sync(env, cfg, opt = {}, log = () => {}) {
     const up = await upload(env, cfg, opt, log);
+    const seen = opt.seen;
+    const dataFile = cfg.wow && env.join(cfg.wow, "Interface", "AddOns", CROWD_ADDON, "Data.lua");
+    if (seen && Object.keys(seen).length && up.items === 0 && newsFor(up.status, seen).length === 0
+        && !opt.out && dataFile && (await env.exists(dataFile))) {
+        log("no new guild prices since your last download - nothing to fetch");
+        return { uploaded: 0, downloaded: 0, skipped: true, group: up.status.group, markets: up.markets, seen: {} };
+    }
     const down = await download(env, cfg, opt, log);
     return { uploaded: up.items, downloaded: down.items, group: down.group, dir: down.dir, markets: up.markets, seen: down.seen };
 }

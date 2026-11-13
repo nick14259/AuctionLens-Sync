@@ -60,8 +60,10 @@ See `buildBatches` in [server/lib/sync/payload.js](server/lib/sync/payload.js).
 - the name you entered, if any
 - a random token it got when you joined
 
-Nothing else. The first sync sends your whole history (a few MB). Later syncs send
-only the last two days.
+Nothing else. The first sync sends your whole history (a few MB). After that, it sends
+only the last two days, and only when AuctionLens has stored a new auction house scan
+since your last upload. A logout or `/reload` without a new scan sends nothing. It
+downloads only when someone in the guild has uploaded something new.
 
 **Writes**:
 - `Interface\AddOns\AuctionLens_Crowd\` (two files, replaced on every sync)

@@ -219,6 +219,30 @@ test("a guild-mate's upload reaches Data.lua before your next /reload", async ()
     assert.ok(readFileSync(dataFile, "utf8").includes('t["4306"]'), "the mate's item is on disk");
 });
 
+test("a sync with nothing new sends and fetches nothing", async () => {
+    const { ctl, wow } = await joinedController("idle");
+    await ctl.syncNow();
+    assert.equal(ctl.snapshot().last.uploaded, 1);
+    const dataFile = join(wow, "Interface", "AddOns", "AuctionLens_Crowd", "Data.lua");
+    const written = readFileSync(dataFile, "utf8");
+
+    // Logout, then exit: two saves of the same data.
+    await ctl.syncNow();
+    let last = ctl.snapshot().last;
+    assert.equal(last.ok, true);
+    assert.equal(last.upToDate, true, "no new scan, nobody else uploaded");
+    assert.equal(last.uploaded, 0);
+    assert.ok(ctl.snapshot().log.some((e) => e.msg === "synced: nothing new to send or fetch"));
+    assert.equal(readFileSync(dataFile, "utf8"), written, "Data.lua left alone");
+
+    // The guild data was deleted (addon folder removed): fetched again despite no news.
+    rmSync(dataFile);
+    await ctl.syncNow();
+    last = ctl.snapshot().last;
+    assert.ok(!last.upToDate);
+    assert.ok(existsSync(dataFile));
+});
+
 test("the guild check runs every two minutes on its own", async () => {
     const f = fakes();
     const ctl = createController({ ow: f.ow, env: nodeEnv, storage: f.storage, timers: f.timers });

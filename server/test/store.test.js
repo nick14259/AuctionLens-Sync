@@ -206,6 +206,17 @@ test("the scan log shows each finished upload to whoever has the join code", asy
 
     assert.equal((await call(scanlog, "POST", "log", { body: { code: "ZZZZ-ZZZZ" } })).status, 404);
     assert.equal((await call(scanlog, "POST", "log", { body: { code: "nope" } })).status, 400);
+
+    // The same scan sent again (as companions before 0.1.2 did on every sync): not logged.
+    await call(upload, "POST", "upload", { token: j.token, body: batch([["800", point(NOW - 30, 4), ""]],
+        { complete: true, throughDay: TODAY }) });
+    log = await call(scanlog, "POST", "log", { body: { code: g.joinCode } });
+    assert.equal(log.body.scans.length, 2, "a repeat of the same scan is not news");
+    // A newer scan is.
+    await call(upload, "POST", "upload", { token: j.token, body: batch([["800", point(NOW - 10, 3), ""]],
+        { complete: true, throughDay: TODAY, lastScan: NOW - 10 }) });
+    log = await call(scanlog, "POST", "log", { body: { code: g.joinCode } });
+    assert.equal(log.body.scans.length, 3);
 });
 
 test("leaving forgets the member", async () => {

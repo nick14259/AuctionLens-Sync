@@ -6,7 +6,8 @@
 //   node companion/cli.js join   [server] <JOIN-CODE>    [--label <you>]
 //     (server defaults to https://auctionlens-project-server.vercel.app)
 //   node companion/cli.js config --wow "C:\Program Files (x86)\World of Warcraft\_forever_"
-//   node companion/cli.js upload   [--sv <AuctionLens.lua>]
+//   node companion/cli.js upload   [--sv <AuctionLens.lua>] [--force]
+//     (skips a market with no scan since your last upload, unless --force)
 //   node companion/cli.js download [--days 30]
 //   node companion/cli.js sync         (upload, then download)
 //   node companion/cli.js status

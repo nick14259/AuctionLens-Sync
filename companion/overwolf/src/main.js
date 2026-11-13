@@ -141,8 +141,11 @@ function render(s) {
         if (!l) setText("ro-last", "never");
         else if (l.ok) {
             const parts = [ago(l.time)];
-            if (l.uploaded !== undefined) parts.push(`sent ${count(l.uploaded)}`);
-            if (l.downloaded !== undefined) parts.push(`received ${count(l.downloaded)}`);
+            if (l.upToDate) parts.push("up to date, nothing to send or fetch");
+            else {
+                if (l.uploaded !== undefined) parts.push(`sent ${count(l.uploaded)}`);
+                if (l.downloaded !== undefined) parts.push(`received ${count(l.downloaded)}`);
+            }
             setText("ro-last", parts.join(" \u00b7 "), "ok");
         } else setText("ro-last", `failed ${ago(l.time)}: ${l.message || ""}`, "bad");
         setText("ro-game", s.game.running ? "running" : "not running", s.game.running ? "ok" : "");

@@ -1,7 +1,7 @@
 {
   "name": "auctionlens-sync-desktop",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "AuctionLens Sync: the guild companion as a portable Windows exe with a tray icon.",
   "scripts": {

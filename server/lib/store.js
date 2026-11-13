@@ -200,6 +200,14 @@ export async function upload(query, member, body, now) {
 async function logUpload(query, member, b, body) {
     const total = Number.isInteger(body.totalItems) && body.totalItems >= 0 ? body.totalItems : b.items.length;
     try {
+        // The same scan sent again (companions before 0.1.2 re-sent on every sync) is
+        // not news: the data merge already ignored it, so does the log.
+        if (b.lastScan) {
+            const prev = await query(
+                `select last_scan from upload_log where member_id = $1 and market = $2
+                  order by created_at desc, id desc limit 1`, [member.id, b.market]);
+            if (prev.length && Number(prev[0].last_scan) === b.lastScan) return;
+        }
         await query(
             `insert into upload_log (group_id, member_id, label, market, items, full_upload, last_scan)
              values ($1, $2, $3, $4, $5, $6, $7)`,
