@@ -100,6 +100,7 @@ export async function status(query, member) {
         markets: markets.map((r) => ({
             market: r.market, items: Number(r.items), members: Number(r.members),
             updated: Math.floor(new Date(r.updated).getTime() / 1000),
+            changed: new Date(r.updated).getTime(), // ms: companions compare it to their last download
         })),
     };
 }
@@ -295,6 +296,7 @@ export async function download(query, member, params, now = Date.now() / 1000) {
         group: member.group_name,
         members: Number(meta[0].members) || 0,
         updated: meta[0].updated ? Math.floor(new Date(meta[0].updated).getTime() / 1000) : 0,
+        changed: meta[0].updated ? new Date(meta[0].updated).getTime() : 0,
         items,
         next: rows.length === PAGE_ITEMS ? rows[rows.length - 1].item_key : null,
     };

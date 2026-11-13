@@ -73,7 +73,8 @@ async function until(pred, ms = 5000) {
 async function joinedController(name) {
     const f = fakes();
     const wow = wowFolder(name);
-    const ctl = createController({ ow: f.ow, env: nodeEnv, storage: f.storage, timers: f.timers });
+    // The 2-minute guild check is off here, so the timer queue holds only syncs.
+    const ctl = createController({ ow: f.ow, env: nodeEnv, storage: f.storage, timers: f.timers, pollMs: 0 });
     const created = await (await fetch(server + "/api/group", {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "OW " + name }),
     })).json();
@@ -185,6 +186,47 @@ test("automatic syncs can be turned off, and nothing runs before joining", async
     const fresh = createController({ ow: g.ow, env: nodeEnv, storage: g.storage, timers: g.timers });
     assert.equal(await fresh.syncNow(), null);
     assert.equal(fresh.snapshot().ready, false);
+});
+
+test("a guild-mate's upload reaches Data.lua before your next /reload", async () => {
+    // You: joined, synced once.
+    const { ctl: you, wow: yourWow } = await joinedController("news");
+    await you.syncNow();
+    const dataFile = join(yourWow, "Interface", "AddOns", "AuctionLens_Crowd", "Data.lua");
+    assert.ok(!readFileSync(dataFile, "utf8").includes('t["4306"]'));
+
+    // Nothing new: the check costs one status call, no download.
+    const before = you.snapshot().log.length;
+    await you.checkNews();
+    assert.ok(!you.snapshot().log.slice(before).some((e) => /fetching|items from/.test(e.msg)), "no download");
+
+    // A guild-mate uploads an item you have never seen.
+    const code = you.snapshot().config.joinCode;
+    const g = fakes();
+    const mateWow = wowFolder("news-mate");
+    const sv = join(mateWow, "WTF", "Account", "ACCT", "SavedVariables", "AuctionLens.lua");
+    const extra = `["4306"] = { ["l"] = ${luaString(encodeRow([NOW - 30, 900, 950, 20, 4, null, 18], 7))} },`;
+    writeFileSync(sv, readFileSync(sv, "utf8").replace('["items"] = {', '["items"] = {\n' + extra));
+    const mate = createController({ ow: g.ow, env: nodeEnv, storage: g.storage, timers: g.timers, pollMs: 0 });
+    await mate.join(server, code, "mate");
+    await mate.setConfig({ wow: mateWow });
+    await mate.syncNow(); // straight after yours: "last changed" is to the millisecond
+
+    // Your app notices on its next check and rewrites Data.lua: the reload will have it.
+    await you.checkNews();
+    await until(() => !you.snapshot().busy);
+    assert.ok(you.snapshot().log.some((e) => /new guild prices for US-Test-Horde/.test(e.msg)));
+    assert.ok(readFileSync(dataFile, "utf8").includes('t["4306"]'), "the mate's item is on disk");
+});
+
+test("the guild check runs every two minutes on its own", async () => {
+    const f = fakes();
+    const ctl = createController({ ow: f.ow, env: nodeEnv, storage: f.storage, timers: f.timers });
+    await ctl.start();
+    assert.equal(f.queue.length, 1);
+    assert.equal(f.queue[0].ms, 120000);
+    await f.queue.shift().fn(); // not joined: checks nothing, schedules the next
+    assert.equal(f.queue.length, 1, "and again");
 });
 
 test("a fresh install starts with the guild server filled in", () => {

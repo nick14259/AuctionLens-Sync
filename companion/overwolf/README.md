@@ -10,6 +10,7 @@ and forget it. Same work as `companion/cli.js`; both run `server/lib/sync/client
 | WoW writes SavedVariables (logout, `/reload`, exit) | upload + download, 20 s after the last write |
 | WoW closes | the same, 15 s later (backstop if the file watch missed it) |
 | WoW starts | download, so the guild's prices are in place by login |
+| every 2 minutes | ask the server if anyone uploaded since the last download (one tiny call); download if so. WoW reads `Data.lua` during a `/reload`, before a save-triggered sync could finish, so it has to be current already |
 | "Sync now" | upload + download |
 
 The window: join or create a group, the WoW folder (found from the running game on

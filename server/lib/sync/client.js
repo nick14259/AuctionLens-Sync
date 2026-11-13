@@ -178,7 +178,8 @@ async function interfaceVersion(env, wow) {
 /**
  * Fetches the guild's data for every market in the local SavedVariables and writes the
  * AuctionLens_Crowd addon. `opt.out` writes to another folder instead (tests).
- * Returns the data written, plus { dir, items }.
+ * Returns the data written, plus { dir, items, seen }: seen maps each market fetched to
+ * the server's "last changed" time for it, which newsFor() compares against later.
  */
 export async function download(env, cfg, opt = {}, log = () => {}) {
     const days = Number(opt.days) || DEFAULT_DAYS;
@@ -190,6 +191,7 @@ export async function download(env, cfg, opt = {}, log = () => {}) {
         for (const m of marketsIn(db)) markets.add(m.market);
     }
     const data = { group: "", generated: Math.floor(Date.now() / 1000), schema, markets: {} };
+    const seen = {};
     let total = 0;
     for (const market of markets) {
         const items = [];
@@ -202,6 +204,7 @@ export async function download(env, cfg, opt = {}, log = () => {}) {
             after = page.next;
         } while (after);
         data.group = page.group;
+        seen[market] = changedMs(page);
         if (items.length) data.markets[market] = { updated: page.updated, members: page.members, items };
         total += items.length;
         log(`${market}: ${items.length} items from ${page.members} member(s)`);
@@ -210,12 +213,30 @@ export async function download(env, cfg, opt = {}, log = () => {}) {
     await env.writeText(env.join(dir, CROWD_ADDON + ".toc"), renderCrowdToc(await interfaceVersion(env, cfg.wow || dir)));
     await env.writeText(env.join(dir, "Data.lua"), renderCrowdLua(data));
     log(`wrote ${dir}`);
-    return { ...data, dir, items: total };
+    return { ...data, dir, items: total, seen };
+}
+
+/**
+ * The markets, among those last downloaded, that the guild has uploaded to since: from
+ * the status call (a few hundred bytes), so checking often costs next to nothing.
+ * `seen` is download()'s; returns [] when nothing changed.
+ */
+export function newsFor(statusResult, seen) {
+    const out = [];
+    for (const m of (statusResult && statusResult.markets) || []) {
+        if (Object.prototype.hasOwnProperty.call(seen || {}, m.market) && changedMs(m) > seen[m.market]) out.push(m.market);
+    }
+    return out;
+}
+
+/** A market's "last changed" in ms: `changed` where the server sends it, else `updated` (s). */
+function changedMs(m) {
+    return Number(m.changed) || (Number(m.updated) || 0) * 1000;
 }
 
 /** Upload, then download: one complete sync. */
 export async function sync(env, cfg, opt = {}, log = () => {}) {
     const up = await upload(env, cfg, opt, log);
     const down = await download(env, cfg, opt, log);
-    return { uploaded: up.items, downloaded: down.items, group: down.group, dir: down.dir, markets: up.markets };
+    return { uploaded: up.items, downloaded: down.items, group: down.group, dir: down.dir, markets: up.markets, seen: down.seen };
 }

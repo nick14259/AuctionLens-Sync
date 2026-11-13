@@ -32,7 +32,9 @@ Click **More info**, then **Run anyway**. If you would rather not trust a downlo
    After that, a `/reload` picks up each sync.
 
 It syncs on its own after the game saves (logout, `/reload` or exit) and fetches the
-guild's prices when the game starts. **Sync now** works any time.
+guild's prices when the game starts. Every 2 minutes it also asks the server whether
+anyone has uploaded since, and fetches if so. A `/reload` then always loads prices at
+most a couple of minutes old. **Sync now** works any time.
 
 The group's scan log, showing who synced and when, is at the server's address, for
 example <https://auctionlens-project-server.vercel.app>. Enter the join code there.

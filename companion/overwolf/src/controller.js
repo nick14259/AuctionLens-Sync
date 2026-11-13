@@ -7,6 +7,10 @@
 //     after the last write, so a half-written file is never read
 //   - the game closed: the same, as a backstop when the file watch missed it
 //   - the game started: download only, so the guild's latest is there by login
+//   - every 2 minutes: ask the server whether anyone uploaded to our markets since our
+//     last download, and download if so. WoW reads AuctionLens_Crowd/Data.lua during a
+//     /reload - before the save-triggered sync above can finish - so the file on disk
+//     has to be current already when the reload happens.
 //   - "Sync now" in the window, any time
 //
 // Overwolf reports WoW: Forever as World of Warcraft (class 765): its Wow.exe is in
@@ -19,8 +23,10 @@ import { winDirname, samePath } from "./owenv.js";
 export const WOW_CLASS_ID = 765;
 export const SAVE_SETTLE_MS = 20000;
 export const EXIT_SETTLE_MS = 15000;
+export const NEWS_POLL_MS = 120000;
 const CONFIG_KEY = "alens.companion.config";
 const LAST_KEY = "alens.companion.last";
+const SEEN_KEY = "alens.companion.seen"; // market -> server "last changed" at our last download
 const LOG_LIMIT = 200;
 
 const DEFAULTS = {
@@ -34,7 +40,7 @@ const DEFAULTS = {
     autoDownload: true,
 };
 
-export function createController({ ow, env, storage, timers = globalThis, now = () => Date.now() }) {
+export function createController({ ow, env, storage, timers = globalThis, now = () => Date.now(), pollMs = NEWS_POLL_MS }) {
     const read = (key, fallback) => {
         try { return JSON.parse(storage.getItem(key)) || fallback; } catch { return fallback; }
     };
@@ -57,6 +63,9 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
     };
     const listeners = new Set();
     let timer = null;
+    let pollTimer = null;
+    let pollFailing = false;
+    let seen = read(SEEN_KEY, {});
     const watched = new Map(); // path -> { armed }
 
     const snapshot = () => ({
@@ -128,6 +137,7 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
         cancelScheduled();
         return run("sync", async () => {
             const r = await client.sync(env, cfg, {}, log);
+            remember(r.seen);
             log(`synced: sent ${r.uploaded} items, received ${r.downloaded} - /reload in game to see them`);
             await refreshWatches();
             return { uploaded: r.uploaded, downloaded: r.downloaded, group: r.group };
@@ -138,8 +148,58 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
         if (!ready()) return Promise.resolve(null);
         return run("download", async () => {
             const r = await client.download(env, cfg, {}, log);
+            remember(r.seen);
             return { downloaded: r.items, group: r.group };
         });
+    }
+
+    function remember(fresh) {
+        if (!fresh) return;
+        seen = { ...seen, ...fresh };
+        write(SEEN_KEY, seen);
+    }
+
+    // Has anyone in the guild uploaded since our last download? One small status call;
+    // the download (a few MB) only when the answer is yes.
+    async function checkNews() {
+        if (!ready() || !cfg.autoDownload || state.busy || state.scheduled) return;
+        let st;
+        try {
+            st = await client.status(env, cfg);
+        } catch (e) {
+            if (e && e.status === 401) {
+                cfg.token = null;
+                saveConfig();
+                log("the server no longer knows this install - join the group again");
+                return;
+            }
+            // Said once per outage, not every two minutes.
+            if (!pollFailing) log(`could not check for guild updates: ${e.message}`);
+            pollFailing = true;
+            return;
+        }
+        if (pollFailing) log("server reachable again");
+        pollFailing = false;
+        if (st.members !== state.members) { state.members = st.members; emit(); }
+        if (Object.keys(seen).length === 0) {
+            await downloadNow(); // never downloaded on this install: do it once
+            return;
+        }
+        const news = client.newsFor(st, seen);
+        if (news.length) {
+            log(`new guild prices for ${news.join(", ")} - fetching, so your next /reload has them`);
+            await downloadNow();
+        }
+    }
+
+    function schedulePoll() {
+        if (pollTimer) timers.clearTimeout(pollTimer);
+        pollTimer = null;
+        if (!pollMs) return;
+        pollTimer = timers.setTimeout(async () => {
+            pollTimer = null;
+            try { await checkNews(); } finally { schedulePoll(); }
+        }, pollMs);
     }
 
     function cancelScheduled() {
@@ -222,6 +282,7 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
 
     async function start() {
         await refreshWatches();
+        schedulePoll();
         if (!ready() && !(cfg.server && cfg.token)) return;
         try {
             const st = await client.status(env, cfg);
@@ -255,6 +316,8 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
                 const r = await client.joinGroup(env, server.trim(), code, label);
                 cfg = { ...cfg, server: server.trim(), token: r.token, group: r.group, label: label || cfg.label };
                 saveConfig();
+                seen = {}; // another group's data: download afresh
+                write(SEEN_KEY, seen);
                 log(`joined "${r.group}"`);
                 await start();
                 return {};
@@ -265,6 +328,8 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
                 const r = await client.createGroup(env, server.trim(), name, label, secret);
                 cfg = { ...cfg, server: server.trim(), token: r.token, group: r.group, joinCode: r.joinCode, label: label || cfg.label };
                 saveConfig();
+                seen = {};
+                write(SEEN_KEY, seen);
                 log(`created "${r.group}" - join code ${r.joinCode}`);
                 await start();
                 return {};
@@ -284,6 +349,7 @@ export function createController({ ow, env, storage, timers = globalThis, now = 
         downloadNow,
         onGameInfo,
         refreshWatches,
+        checkNews,
         _scheduleSync: scheduleSync,
     };
 }
