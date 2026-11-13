@@ -1,0 +1,152 @@
+/* The addon's muted console look (AuctionLens/UI/Theme.lua): near-black layers, one dulled
+   orange for focus and action, cyan/red kept for data. Fonts are the addon's own (OFL). */
+
+@font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("fonts/ChakraPetch-SemiBold.ttf"); }
+@font-face { font-family: "Share Tech Mono"; src: url("fonts/ShareTechMono-Regular.ttf"); }
+
+:root {
+  --sunken: #07080a;
+  --base: #0b0c0f;
+  --raised: #121419;
+  --ink: #d9dcdf;
+  --ink-sec: #aab1b8;
+  --ink-muted: #78808a;
+  --ink-faint: #4b525b;
+  --mark: #6b737c;
+  --signal: #c8783a;
+  --signal-soft: rgba(200, 120, 58, 0.14);
+  --good: #62ad7b;
+  --down: #d05a66;
+  --hairline: rgba(255, 255, 255, 0.085);
+  --divider: rgba(255, 255, 255, 0.055);
+  --hover: rgba(255, 255, 255, 0.055);
+  --idle: rgba(255, 255, 255, 0.04);
+  --title: "Chakra Petch", "Segoe UI", sans-serif;
+  --mono: "Share Tech Mono", Consolas, monospace;
+  --body: "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex; flex-direction: column;
+  background: var(--base); color: var(--ink);
+  font: 13px/1.45 var(--body);
+  border: 1px solid var(--hairline);
+  overflow: hidden; user-select: none;
+}
+[hidden] { display: none !important; }
+
+/* Title bar: the drag handle (overwolf.windows.dragMove). */
+#titlebar {
+  display: flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 4px 0 12px; flex: none;
+  background: var(--raised); border-bottom: 1px solid var(--hairline);
+  cursor: default;
+  -webkit-app-region: drag; /* the desktop app's frameless window; Overwolf uses dragMove */
+}
+#titlebar button { -webkit-app-region: no-drag; }
+.mark { width: 9px; height: 9px; background: var(--signal); }
+.brand { font: 600 13px var(--title); letter-spacing: 0.14em; }
+.sub { font: 600 11px var(--title); letter-spacing: 0.14em; color: var(--ink-muted); }
+.spacer { flex: 1; }
+button.chrome {
+  width: 30px; height: 26px; border: 0; background: transparent; color: var(--ink-muted);
+  font-size: 16px; cursor: pointer;
+}
+button.chrome:hover { background: var(--hover); color: var(--ink); }
+#btn-close:hover { background: var(--down); color: #fff; }
+
+main { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+main::-webkit-scrollbar { width: 8px; }
+main::-webkit-scrollbar-thumb { background: var(--hairline); }
+
+.card {
+  position: relative; background: var(--raised); border: 1px solid var(--divider);
+  padding: 12px 14px 14px;
+}
+/* Corner brackets, as on the addon's windows. */
+.card::before, .card::after {
+  content: ""; position: absolute; width: 8px; height: 8px; border-color: rgba(255, 255, 255, 0.22);
+  border-style: solid; pointer-events: none;
+}
+.card::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+.card::after { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+
+h2 {
+  margin: 0 0 10px; font: 600 11px var(--title); letter-spacing: 0.16em; color: var(--ink-sec);
+  display: flex; align-items: center; gap: 8px;
+}
+h2 .num { font-family: var(--mono); color: var(--mark); letter-spacing: 0; }
+
+.field { display: block; margin-bottom: 10px; color: var(--ink-muted); font-size: 12px; }
+.opt { color: var(--ink-faint); }
+input[type=url], input:not([type]), input[type=password] {
+  display: block; width: 100%; margin-top: 4px; padding: 7px 9px;
+  background: var(--sunken); color: var(--ink); border: 1px solid var(--hairline);
+  font: 13px var(--body); outline: none; user-select: text;
+}
+#in-code, #in-wow, #in-server { font-family: var(--mono); font-size: 13px; }
+input:focus { border-color: var(--signal); }
+
+button { font: 600 11px var(--title); letter-spacing: 0.12em; }
+button.primary {
+  width: 100%; height: 34px; margin-top: 4px; cursor: pointer;
+  background: var(--signal-soft); color: var(--ink); border: 1px solid var(--signal);
+}
+button.primary:hover:not(:disabled) { background: rgba(200, 120, 58, 0.26); }
+button.primary:disabled { border-color: var(--hairline); background: var(--idle); color: var(--ink-muted); cursor: default; }
+button.primary.busy { background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(200, 120, 58, 0.16) 6px 12px);
+  background-size: 34px 34px; animation: crawl 1s linear infinite; }
+@keyframes crawl { to { background-position: 34px 0; } }
+@media (prefers-reduced-motion: reduce) { button.primary.busy { animation: none; } }
+
+button.ghost {
+  height: 28px; padding: 0 10px; cursor: pointer; white-space: nowrap;
+  background: var(--idle); color: var(--ink-sec); border: 1px solid var(--hairline);
+}
+button.ghost:hover { background: var(--hover); color: var(--ink); }
+button.link { background: none; border: 0; color: var(--ink-muted); cursor: pointer; padding: 4px 6px; }
+button.link:hover { color: var(--ink); }
+#btn-leave:hover { color: var(--down); }
+
+.seg { display: flex; margin: 2px 0 12px; border-bottom: 1px solid var(--divider); }
+.seg button {
+  flex: 1; height: 28px; background: none; border: 0; color: var(--ink-muted); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.seg button.on { color: var(--ink); border-bottom-color: var(--signal); }
+
+.group-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.group-name { font: 600 18px var(--title); letter-spacing: 0.04em; }
+.mono { font-family: var(--mono); letter-spacing: 0; font-weight: 400; font-size: 12px; color: var(--ink); }
+
+.stats { display: grid; grid-template-columns: 78px 1fr; gap: 4px 10px; margin: 0 0 12px; }
+.stats dt { color: var(--ink-muted); font-size: 12px; }
+.stats dd { margin: 0; font-family: var(--mono); font-size: 13px; color: var(--ink-sec); }
+.ok { color: var(--good) !important; }
+.bad { color: var(--down) !important; }
+.warn { color: var(--signal) !important; }
+
+.path-row { display: flex; gap: 6px; align-items: center; }
+.path-row input { margin-top: 0; }
+.muted { color: var(--ink-muted); }
+.small { font-size: 12px; margin-top: 6px; }
+
+.check { display: flex; gap: 8px; align-items: center; margin: 4px 0; color: var(--ink-sec); cursor: pointer; }
+.check input { accent-color: var(--signal); margin: 0; }
+
+.log-card { flex: 1; min-height: 120px; display: flex; flex-direction: column; }
+.log {
+  list-style: none; margin: 0; padding: 6px 8px; flex: 1; overflow-y: auto; max-height: 220px;
+  background: var(--sunken); border: 1px solid var(--divider);
+  font: 12px/1.5 var(--mono); color: var(--ink-sec); user-select: text;
+}
+.log li { white-space: pre-wrap; word-break: break-word; }
+.log time { color: var(--ink-faint); margin-right: 8px; }
+.log .err { color: var(--down); }
+
+footer {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  padding: 6px 12px; border-top: 1px solid var(--hairline); background: var(--raised);
+}

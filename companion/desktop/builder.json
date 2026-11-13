@@ -1,0 +1,21 @@
+{
+  "appId": "com.auctionlens.sync",
+  "productName": "AuctionLens Sync",
+  "copyright": "All Rights Reserved",
+  "directories": {
+    "app": "app",
+    "output": "../../dist/desktop",
+    "buildResources": "build-res"
+  },
+  "files": ["**/*"],
+  "asar": true,
+  "compression": "maximum",
+  "electronLanguages": ["en-US"],
+  "win": {
+    "target": [{ "target": "portable", "arch": ["x64"] }],
+    "icon": "build-res/icon.ico"
+  },
+  "portable": {
+    "artifactName": "AuctionLens-Sync-${version}.exe"
+  }
+}

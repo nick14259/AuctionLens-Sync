@@ -1,0 +1,17 @@
+{
+  "name": "auctionlens-guild-server",
+  "private": true,
+  "type": "module",
+  "description": "Guild price sharing for AuctionLens: Vercel functions + Neon Postgres.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "dev": "node dev.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0"
+  }
+}

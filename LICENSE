@@ -1,0 +1,12 @@
+Copyright (c) 2026 Nick (Jarnot Forge). All rights reserved.
+
+AuctionLens Sync is published as readable source so anyone can see exactly what it reads,
+sends and stores. It is not open source: no permission is granted to copy, modify,
+redistribute or publish derivative works.
+
+You may read the source, build it, run it, and modify your own copy for your own use.
+
+Third-party material in this repository keeps its own licence:
+- AuctionLens/Media/Fonts: Chakra Petch and Share Tech Mono, SIL Open Font License 1.1
+  (licence texts alongside the fonts).
+- Dependencies installed by npm are under their own licences; none are included here.

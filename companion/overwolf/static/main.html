@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AuctionLens Guild Sync</title>
+<link rel="stylesheet" href="main.css">
+</head>
+<body>
+<header id="titlebar">
+  <span class="mark" aria-hidden="true"></span>
+  <span class="brand">AUCTIONLENS</span>
+  <span class="sub">GUILD SYNC</span>
+  <span class="spacer"></span>
+  <button id="btn-min" class="chrome" title="Minimize" aria-label="Minimize">&#8211;</button>
+  <button id="btn-close" class="chrome" title="Close (keeps syncing in the background)" aria-label="Close">&#215;</button>
+</header>
+
+<main>
+  <!-- Not joined yet -->
+  <section id="connect" class="card" hidden>
+    <h2><span class="num">01</span>CONNECT</h2>
+    <label class="field">Server
+      <input id="in-server" type="url" placeholder="https://your-project.vercel.app" spellcheck="false">
+    </label>
+    <div class="seg" role="tablist">
+      <button id="tab-join" class="on" role="tab">JOIN A GROUP</button>
+      <button id="tab-create" role="tab">CREATE ONE</button>
+    </div>
+    <div id="pane-join">
+      <label class="field">Join code
+        <input id="in-code" placeholder="K7QF-M2XR" spellcheck="false" autocomplete="off">
+      </label>
+    </div>
+    <div id="pane-create" hidden>
+      <label class="field">Guild name
+        <input id="in-name" maxlength="40" spellcheck="false">
+      </label>
+      <label class="field">Create secret <span class="opt">if the server has one</span>
+        <input id="in-secret" type="password" spellcheck="false" autocomplete="off">
+      </label>
+    </div>
+    <label class="field">Your name <span class="opt">optional, shown on the group's scan log</span>
+      <input id="in-label" maxlength="40" spellcheck="false">
+    </label>
+    <button id="btn-connect" class="primary">JOIN</button>
+  </section>
+
+  <!-- Joined -->
+  <section id="readout" class="card" hidden>
+    <h2><span class="num">01</span>GROUP</h2>
+    <div class="group-row">
+      <div>
+        <div id="ro-group" class="group-name"></div>
+        <div id="ro-members" class="muted"></div>
+      </div>
+      <button id="btn-code" class="ghost" title="Copy the join code for guild-mates">
+        CODE <span id="ro-code" class="mono"></span>
+      </button>
+    </div>
+    <dl class="stats">
+      <dt>Last sync</dt><dd id="ro-last"></dd>
+      <dt>Game</dt><dd id="ro-game"></dd>
+      <dt>Next</dt><dd id="ro-next"></dd>
+    </dl>
+    <button id="btn-sync" class="primary">SYNC NOW</button>
+  </section>
+
+  <section id="folder" class="card">
+    <h2><span class="num">02</span>WOW: FOREVER FOLDER</h2>
+    <div class="path-row">
+      <input id="in-wow" placeholder="C:\Program Files (x86)\World of Warcraft\_forever_" spellcheck="false">
+      <button id="btn-browse" class="ghost">BROWSE</button>
+    </div>
+    <div id="wow-status" class="muted small"></div>
+  </section>
+
+  <section id="options" class="card" hidden>
+    <h2><span class="num">03</span>AUTOMATIC</h2>
+    <label class="check"><input id="opt-up" type="checkbox"> Sync after the game saves (logout, /reload, exit)</label>
+    <label class="check"><input id="opt-down" type="checkbox"> Fetch the guild's prices when the game starts</label>
+  </section>
+
+  <section class="card log-card">
+    <h2><span class="num" id="log-num">02</span>LOG</h2>
+    <ol id="log" class="log"></ol>
+  </section>
+</main>
+
+<footer>
+  <span class="muted small">Closing this window keeps syncing in the background.</span>
+  <span class="spacer"></span>
+  <button id="btn-leave" class="link" hidden>Leave group</button>
+  <button id="btn-quit" class="link">Quit</button>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>

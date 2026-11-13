@@ -1,0 +1,8 @@
+node_modules/
+dist/
+companion/desktop/app/
+companion/desktop/build-res/
+server/.data/
+.vercel/
+Thumbs.db
+.DS_Store

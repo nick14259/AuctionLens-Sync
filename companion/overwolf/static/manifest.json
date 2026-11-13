@@ -1,0 +1,52 @@
+{
+  "manifest_version": 1,
+  "type": "WebApp",
+  "meta": {
+    "name": "AuctionLens Guild Sync",
+    "author": "Jarnot",
+    "version": "0.1.0",
+    "minimum-overwolf-version": "0.170.0",
+    "description": "Shares AuctionLens auction house prices within your guild: uploads after you play, and puts the guild's prices in your tooltips. WoW: Forever.",
+    "dock_button_title": "AuctionLens Sync",
+    "icon": "icons/icon.png",
+    "icon_gray": "icons/icon_gray.png",
+    "launcher_icon": "icons/launcher.ico",
+    "window_icon": "icons/window_icon.png"
+  },
+  "permissions": ["FileSystem", "GameInfo"],
+  "data": {
+    "start_window": "background",
+    "windows": {
+      "background": {
+        "file": "background.html",
+        "is_background_page": true
+      },
+      "main": {
+        "file": "main.html",
+        "desktop_only": true,
+        "native_window": false,
+        "transparent": false,
+        "resizable": true,
+        "show_in_taskbar": true,
+        "size": { "width": 460, "height": 680 },
+        "min_size": { "width": 400, "height": 520 },
+        "block_top_window_navigation": true,
+        "disable_rightclick": true
+      }
+    },
+    "game_targeting": {
+      "type": "dedicated",
+      "game_ids": [765]
+    },
+    "launch_events": [
+      {
+        "event": "GameLaunch",
+        "event_data": { "game_ids": [765] },
+        "start_minimized": true
+      }
+    ],
+    "externally_connectable": {
+      "matches": ["https://*.vercel.app"]
+    }
+  }
+}
