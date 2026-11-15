@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { setQuery } from "../lib/db.js";
 import { encodeDeltaRows, decodeDeltaRows, encodeRow } from "../lib/sync/codec.js";
-import { layout, D } from "../lib/sync/format.js";
+import { layout, D, canonicalMarket } from "../lib/sync/format.js";
 import { PAGE_ITEMS } from "../lib/store.js";
 import * as group from "../api/group.js";
 import * as join from "../api/join.js";
@@ -217,6 +217,63 @@ test("the scan log shows each finished upload to whoever has the join code", asy
         { complete: true, throughDay: TODAY, lastScan: NOW - 10 }) });
     log = await call(scanlog, "POST", "log", { body: { code: g.joinCode } });
     assert.equal(log.body.scans.length, 3);
+});
+
+test("market keys lose the realm number", () => {
+    assert.equal(canonicalMarket("US-CAMWOWUS2Realm6PvP-Horde"), "US-CAMWOWUS2PvP-Horde");
+    assert.equal(canonicalMarket("US-CAMWOWUS2Realm2PvP-Neutral"), "US-CAMWOWUS2PvP-Neutral");
+    assert.equal(canonicalMarket("US-CAMWOWUS2PvP-Horde"), "US-CAMWOWUS2PvP-Horde");
+    assert.equal(canonicalMarket("XX-ClassicBetaPvP-Horde"), "XX-ClassicBetaPvP-Horde");
+    assert.equal(canonicalMarket("US-CAMWOWUS2Realm6-Horde"), "US-CAMWOWUS2Realm6-Horde", "nothing after the number");
+    assert.equal(canonicalMarket(MK), MK);
+});
+
+test("one auction house under two realm numbers is merged, and old keys still work", async () => {
+    const OLD6 = "US-CAMWOWUS2Realm6PvP-Horde", OLD2 = "US-CAMWOWUS2Realm2PvP-Horde", NEW = "US-CAMWOWUS2PvP-Horde";
+    const { body: g } = await call(group, "POST", "group", { body: { name: "Realms", label: "Six" } });
+    const { body: j } = await call(join, "POST", "join", { body: { code: g.joinCode, label: "Two" } });
+    // As a server before this change stored them: written straight in, since an upload
+    // now renames on the way in.
+    const gid = (await pg.query("select id from groups where join_code = $1", [g.joinCode])).rows[0].id;
+    const ids = Object.fromEntries((await pg.query("select id, label from members where group_id = $1", [gid])).rows
+        .map((m) => [m.label, m.id]));
+    const put = (market, key, l, d) => pg.query(
+        "insert into items (group_id, market, item_key, latest, daily, last_day) values ($1, $2, $3, $4, $5, $6)",
+        [gid, market, key, l, d, TODAY]);
+    await put(OLD6, "100", point(NOW - 60, 50),
+        daily([[TODAY - 1, 60, 70, 50, 65, 48, 5, 6, 2, 4], [TODAY, 65, 80, 55, 70, 55, 6, 8, 1, 3]]));
+    await put(OLD2, "100", point(NOW - 3 * 86400, 40),
+        daily([[TODAY - 3, 40, 40, 40, 40, 40, 1, 1, null, 1], [TODAY - 1, 61, 72, 49, 66, 47, 5, 7, 2, 6]]));
+    await put(OLD2, "200", point(NOW - 3 * 86400, 900), daily([[TODAY - 3, 900, 900, 900, 900, 900, 1, 1, null, 1]]));
+    await pg.query("insert into uploads (member_id, market, through_day, last_scan) values ($1, $2, $3, $4), ($5, $6, $7, $8)",
+        [ids.Six, OLD6, TODAY, NOW - 60, ids.Two, OLD2, TODAY - 3, NOW - 3 * 86400]);
+    await pg.query("insert into upload_log (group_id, member_id, label, market, items, last_scan) values ($1, $2, 'Two', $3, 2, $4)",
+        [gid, ids.Two, OLD2, NOW - 3 * 86400]);
+
+    const st = await call(status, "GET", "status", { token: j.token });
+    assert.deepEqual(st.body.markets.map((m) => [m.market, m.items, m.members]), [[NEW, 2, 2]]);
+    assert.deepEqual(st.body.uploads.map((u) => u.market).sort(), [NEW, OLD2].sort(), "the old mark stays for old companions");
+
+    const dl = await call(download, "GET", `download?market=${NEW}&days=30`, { token: g.token });
+    const item = Object.fromEntries(dl.body.items.map(([k, l, d]) => [k, { l, d }]));
+    assert.equal(item["100"].l, point(NOW - 60, 50), "the newer point");
+    const rows = decodeDeltaRows(item["100"].d, 10, lay.dDelta);
+    assert.deepEqual(rows.map((r) => r[D.DAY]), [TODAY - 3, TODAY - 1, TODAY], "days from both");
+    assert.equal(rows[1][D.LOW], 49, "a day both had, merged");
+    assert.ok(item["200"]);
+    const old = await call(download, "GET", `download?market=${OLD6}&days=30`, { token: g.token });
+    assert.equal(old.body.items.length, 2, "asking by an old key gets the merged market");
+    const log = await call(scanlog, "POST", "log", { body: { code: g.joinCode } });
+    assert.deepEqual(log.body.scans.map((s) => s.market), [NEW]);
+
+    // An upload from a 0.3.0 install lands in the merged market and marks both keys.
+    await call(upload, "POST", "upload", { token: j.token, body: { ...batch([["300", point(NOW - 30, 7), ""]],
+        { complete: true, throughDay: TODAY, lastScan: NOW - 30 }), market: OLD2 } });
+    const st2 = await call(status, "GET", "status", { token: j.token });
+    assert.deepEqual(st2.body.markets.map((m) => [m.market, m.items]), [[NEW, 3]]);
+    const marks = Object.fromEntries(st2.body.uploads.map((u) => [u.market, u.lastScan]));
+    assert.equal(marks[OLD2], NOW - 30);
+    assert.equal(marks[NEW], NOW - 30);
 });
 
 test("leaving forgets the member", async () => {

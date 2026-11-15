@@ -3,7 +3,7 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { decodeDeltaRows, encodeDeltaRows, decodeRow } from "./sync/codec.js";
-import { D, P, WIRE, layout, dayIndex, validMarket, validItemKey, validCodec } from "./sync/format.js";
+import { D, P, WIRE, layout, dayIndex, validMarket, validItemKey, validCodec, canonicalMarket } from "./sync/format.js";
 import { mergeDaily, newerPoint, recentDaily, MAX_BATCH_ITEMS } from "./sync/payload.js";
 
 export const KEEP_DAYS = 90;
@@ -83,13 +83,15 @@ export async function authenticate(query, token) {
 }
 
 export async function status(query, member) {
-    const mine = await query(
-        "select market, through_day, last_scan from uploads where member_id = $1 order by market", [member.id]);
-    const markets = await query(
+    const marketRows = () => query(
         `select i.market, count(*)::int as items, max(i.updated_at) as updated,
                 (select count(*)::int from uploads u join members m on m.id = u.member_id
                   where m.group_id = $1 and u.market = i.market) as members
            from items i where i.group_id = $1 group by i.market order by i.market`, [member.group_id]);
+    let markets = await marketRows();
+    if (await mergeLegacyMarkets(query, member.group_id, markets.map((r) => r.market))) markets = await marketRows();
+    const mine = await query(
+        "select market, through_day, last_scan from uploads where member_id = $1 order by market", [member.id]);
     const count = await query("select count(*)::int as n from members where group_id = $1", [member.group_id]);
     return {
         v: WIRE,
@@ -144,7 +146,7 @@ export function readBatch(body, now = Date.now() / 1000) {
         if (latest || rows.length) items.push({ key, latest, rows });
     }
     return {
-        schema: body.schema, lay, market: body.market, items, maxDay,
+        schema: body.schema, lay, market: canonicalMarket(body.market), sentMarket: body.market, items, maxDay,
         lastScan: Number.isFinite(body.lastScan) ? Math.floor(body.lastScan) : 0,
         complete: body.complete === true,
         throughDay: Number.isInteger(body.throughDay) ? Math.min(body.throughDay, today + 1) : maxDay,
@@ -182,14 +184,18 @@ export async function upload(query, member, body, now) {
     }
     // Only the last batch of an upload moves the member's mark: an upload cut off half
     // way is sent again in full next time, not skipped.
+    // A companion reading a 0.3.0 SavedVariables looks its mark up under the key it sent,
+    // so an old key gets the mark too - or it would send everything again every time.
     if (b.complete && b.throughDay !== null) {
-        await query(
-            `insert into uploads (member_id, market, through_day, last_scan, updated_at)
-             values ($1, $2, $3, $4, now())
-             on conflict (member_id, market) do update
-                set through_day = greatest(uploads.through_day, excluded.through_day),
-                    last_scan = greatest(uploads.last_scan, excluded.last_scan), updated_at = now()`,
-            [member.id, b.market, b.throughDay, b.lastScan]);
+        for (const market of new Set([b.market, b.sentMarket])) {
+            await query(
+                `insert into uploads (member_id, market, through_day, last_scan, updated_at)
+                 values ($1, $2, $3, $4, now())
+                 on conflict (member_id, market) do update
+                    set through_day = greatest(uploads.through_day, excluded.through_day),
+                        last_scan = greatest(uploads.last_scan, excluded.last_scan), updated_at = now()`,
+                [member.id, market, b.throughDay, b.lastScan]);
+        }
     }
     if (b.complete) await logUpload(query, member, b, body);
     return { ok: true, items: b.items.length, complete: b.complete };
@@ -239,9 +245,11 @@ export async function scanLog(query, code) {
     const members = await query(
         `select coalesce(label, '') as label, created_at, last_seen from members where group_id = $1
           order by created_at`, [g.id]);
-    const markets = await query(
+    const marketRows = () => query(
         `select market, count(*)::int as items, max(updated_at) as updated
            from items where group_id = $1 group by market order by market`, [g.id]);
+    let markets = await marketRows();
+    if (await mergeLegacyMarkets(query, g.id, markets.map((r) => r.market))) markets = await marketRows();
     let scans = [];
     let logReady = true;
     try {
@@ -270,8 +278,8 @@ export async function scanLog(query, code) {
 // Download
 // ---------------------------------------------------------------------------
 export async function download(query, member, params, now = Date.now() / 1000) {
-    const market = params.market;
-    if (!validMarket(market)) throw new ApiError(400, "bad market key");
+    if (!validMarket(params.market)) throw new ApiError(400, "bad market key");
+    const market = canonicalMarket(params.market);
     const schema = Number(params.schema || 3);
     try { layout(schema); } catch (e) { throw new ApiError(400, e.message); }
     const days = Math.min(KEEP_DAYS, Math.max(1, Number(params.days) || 30));
@@ -308,6 +316,82 @@ export async function download(query, member, params, now = Date.now() / 1000) {
         items,
         next: rows.length === PAGE_ITEMS ? rows[rows.length - 1].item_key : null,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Market keys with the server's realm number
+// ---------------------------------------------------------------------------
+// Addon 0.3.0 and earlier keyed markets "US-CAMWOWUS2Realm6PvP-Horde", and a guild-mate
+// on the same auction house got "...Realm2PvP...": one market stored twice. Whatever a
+// group still has under such a key is merged into the canonical one the first time its
+// markets are listed (status, the scan log page). Each page is merged then deleted, and
+// the merge is idempotent, so a request cut off part-way leaves nothing wrong: the next
+// one carries on.
+
+/** Moves one group's items from market `from` into `to`, merging where both have them. */
+export async function mergeMarket(query, groupId, from, to, schema = 3) {
+    const lay = layout(schema);
+    let moved = 0;
+    for (;;) {
+        const rows = await query(
+            `select item_key, latest, daily from items where group_id = $1 and market = $2
+              order by item_key limit $3`, [groupId, from, PAGE_ITEMS]);
+        if (rows.length === 0) break;
+        const keys = rows.map((r) => r.item_key);
+        const have = new Map();
+        for (const r of await query(
+            "select item_key, latest, daily from items where group_id = $1 and market = $2 and item_key = any($3::text[])",
+            [groupId, to, keys])) {
+            have.set(r.item_key, r);
+        }
+        const outLatest = [], outDaily = [], outLastDay = [];
+        for (const r of rows) {
+            const old = have.get(r.item_key);
+            const merged = mergeDaily(old ? decodeDeltaRows(old.daily, lay.dWidth, lay.dDelta) : [],
+                decodeDeltaRows(r.daily, lay.dWidth, lay.dDelta), KEEP_DAYS);
+            outLatest.push(newerPoint(old ? old.latest : "", r.latest, lay.pWidth));
+            outDaily.push(encodeDeltaRows(merged, lay.dWidth, lay.dDelta));
+            outLastDay.push(merged.length ? merged[merged.length - 1][D.DAY] : null);
+        }
+        await query(
+            `insert into items (group_id, market, item_key, latest, daily, last_day, updated_at)
+             select $1, $2, u.k, u.l, u.d, u.ld, now()
+               from unnest($3::text[], $4::text[], $5::text[], $6::int[]) as u(k, l, d, ld)
+             on conflict (group_id, market, item_key) do update
+                set latest = excluded.latest, daily = excluded.daily,
+                    last_day = excluded.last_day, updated_at = now()`,
+            [groupId, to, keys, outLatest, outDaily, outLastDay]);
+        await query("delete from items where group_id = $1 and market = $2 and item_key = any($3::text[])",
+            [groupId, from, keys]);
+        moved += rows.length;
+    }
+    // Members' marks follow. The old row stays too: see upload().
+    await query(
+        `insert into uploads (member_id, market, through_day, last_scan, updated_at)
+         select u.member_id, $2, u.through_day, u.last_scan, now() from uploads u
+          where u.market = $1 and u.member_id in (select id from members where group_id = $3)
+         on conflict (member_id, market) do update
+            set through_day = greatest(uploads.through_day, excluded.through_day),
+                last_scan = greatest(uploads.last_scan, excluded.last_scan), updated_at = now()`,
+        [from, to, groupId]);
+    try {
+        await query("update upload_log set market = $3 where group_id = $1 and market = $2", [groupId, from, to]);
+    } catch (e) {
+        console.error("upload_log:", e.message); // table not created yet: nothing to rename
+    }
+    return moved;
+}
+
+/** Merges every market in `markets` that has a realm number; true if any was. */
+export async function mergeLegacyMarkets(query, groupId, markets) {
+    let any = false;
+    for (const from of markets) {
+        const to = canonicalMarket(from);
+        if (to === from) continue;
+        await mergeMarket(query, groupId, from, to);
+        any = true;
+    }
+    return any;
 }
 
 /** Leaving deletes the member; what they uploaded stays merged into the guild's data. */
